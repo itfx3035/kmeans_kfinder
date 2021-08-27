@@ -1,7 +1,7 @@
 # kmeans_kfinder
 KMeans k finder: finds the best k (number of clusters) on supplied dataset.
 Works upon sci-kit learn KMeans implementation.
-Uses five different methods to find best k; final result is based on voting.
+Uses five different methods to find best k; final result is based on voting among all methods.
 
 ## Metods:
 ### method #1
