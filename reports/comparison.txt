@@ -1,0 +1,44 @@
+
+=== baseline.kmeans_kfinder_baseline ===
+dataset                truth best_k  agree        crash_free      vote_follows      fit_best_wor      stable_acros      kwargs_not_m  warn      ms  notes
+clean_blobs                4      4   True              True              True             False              True              True     0   395.6 AttributeError
+overlapping_blobs          3      3   True              True              True             False              True              True     0   390.0 AttributeError
+anisotropic_blobs          3      3   True              True              True             False             False              True     0   377.8 AttributeError
+tiny_dataset               2   None  False             False             False             False               n/a              True     0    None ValueError: n_samples=12 should be >= n_clusters=13.
+single_cluster_noise       1      7  False              True              True             False             False              True     0   330.6 AttributeError
+degenerate_identical       1   None  False             False             False             False               n/a             False     0    None ZeroDivisionError: division by zero
+iris                       3      4  False              True              True             False             False              True     0   379.4 AttributeError
+score: crash_free=5/7 vote_follows_rule=5/7 fit_best_works=0/7 stable_across_seeds=2/5 kwargs_not_mutated=6/7 agree_with_truth=3 total_time_ms=1873.4
+
+=== kmeans_kfinder ===
+dataset                truth best_k  agree        crash_free      vote_follows      fit_best_wor      stable_acros      kwargs_not_m  warn      ms  notes
+clean_blobs                4      4   True              True              True              True              True              True     0   397.9 
+overlapping_blobs          3      3   True              True              True              True              True              True     0   379.2 
+anisotropic_blobs          3      3   True              True              True              True             False              True     0   380.5 
+tiny_dataset               2      5  False              True              True              True             False              True     0    90.0 
+single_cluster_noise       1      7  False              True              True              True             False              True     0   361.3 
+degenerate_identical       1   None  False              True              True             False              True              True     0     5.1 ValueError
+iris                       3      4  False              True              True              True             False              True     0   381.5 
+score: crash_free=7/7 vote_follows_rule=7/7 fit_best_works=6/7 stable_across_seeds=3/7 kwargs_not_mutated=7/7 agree_with_truth=3 total_time_ms=1995.5
+
+=== delta (improved - baseline) ===
+crash_free           5/7 -> 7/7  IMPROVED
+vote_follows_rule    5/7 -> 7/7  IMPROVED
+fit_best_works       0/7 -> 6/7  IMPROVED
+stable_across_seeds  2/5 -> 3/7  new coverage
+kwargs_not_mutated   6/7 -> 7/7  IMPROVED
+agree_with_truth     3 -> 3  same
+total_time_ms        1873.4 -> 1995.5  REGRESSION
+  crash_free: tiny_dataset [False -> True], degenerate_identical [False -> True]
+  vote_follows_rule: tiny_dataset [False -> True], degenerate_identical [False -> True]
+  fit_best_works: clean_blobs [False -> True], overlapping_blobs [False -> True], anisotropic_blobs [False -> True], tiny_dataset [False -> True], single_cluster_noise [False -> True], iris [False -> True]
+  stable_across_seeds: tiny_dataset [n/a -> False], degenerate_identical [n/a -> True]
+  kwargs_not_mutated: degenerate_identical [False -> True]
+runtime on datasets both ran 1873.4 -> 1900.4 ms (same)
+
+behaviour preserved on datasets where the baseline produced an answer:
+  clean_blobs            same answer
+  overlapping_blobs      same answer
+  anisotropic_blobs      same answer
+  single_cluster_noise   same answer
+  iris                   same answer

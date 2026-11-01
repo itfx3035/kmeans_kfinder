@@ -1,0 +1,32 @@
+{
+  "clean_blobs": {
+    "best_k": 4,
+    "truth": 4
+  },
+  "overlapping_blobs": {
+    "best_k": 3,
+    "truth": 3
+  },
+  "anisotropic_blobs": {
+    "best_k": 3,
+    "truth": 3
+  },
+  "tiny_dataset": {
+    "best_k": null,
+    "truth": 2,
+    "baseline_error": "ValueError"
+  },
+  "single_cluster_noise": {
+    "best_k": 7,
+    "truth": 1
+  },
+  "degenerate_identical": {
+    "best_k": null,
+    "truth": 1,
+    "baseline_error": "ZeroDivisionError"
+  },
+  "iris": {
+    "best_k": 4,
+    "truth": 3
+  }
+}

@@ -1,0 +1,48 @@
+dataset                  truth   documented   derivative        ratio cost_penalty       vertex
+sep1.0_k2                    2            2            2            2            2            2
+sep1.0_k3                    3            2            2            2            2            2
+sep1.0_k4                    4            3            3            3            3            3
+sep1.0_k6                    6           15           15           15           15           15
+sep1.5_k2                    2            6            6            6            6            6
+sep1.5_k3                    3            3            3            3            3            3
+sep1.5_k4                    4            3            3            3            3            3
+sep1.5_k6                    6           16           16           16           16           16
+sep2.0_k2                    2            2            2            2            2            2
+sep2.0_k3                    3            3            3            3            3            3
+sep2.0_k4                    4            4            4            4            4            4
+sep2.0_k6                    6            5            5            5            5            5
+sep2.5_k2                    2            2            2            2            2            2
+sep2.5_k3                    3            3            3            3            3            3
+sep2.5_k4                    4            3            3            3            3            3
+sep2.5_k6                    6            5            5            5            5            5
+sep3.0_k2                    2            2            2            2            2            2
+sep3.0_k3                    3            3            3            3            3            3
+sep3.0_k4                    4            4            4            4            4            4
+sep3.0_k6                    6            5            5            5            5            5
+sep4.0_k2                    2            2            2            2            2            2
+sep4.0_k3                    3            3            3            3            3            3
+sep4.0_k4                    4            4            4            4            4            4
+sep4.0_k6                    6            4            4            4            4            4
+sep6.0_k2                    2            2            2            2            2            2
+sep6.0_k3                    3            3            3            3            3            3
+sep6.0_k4                    4            4            4            4            4            4
+sep6.0_k6                    6            6            6            6            6            6
+sep10.0_k2                   2            2            2            2            2            2
+sep10.0_k3                   3            3            3            3            3            3
+sep10.0_k4                   4            4            4            4            4            4
+sep10.0_k6                   6            6            6            6            6            6
+sample:clean_blobs           4            4            4            4            4            4
+sample:overlapping_blobs     3            3            3            3            3            3
+sample:anisotropic_blobs     3            3            3            3            3            3
+sample:single_cluster_noise     1            7            7            7            7            7
+sample:degenerate_identical     1         None         None         None         None         None
+sample:iris                  3            4            4            4            4            4
+
+final answer matches ground truth (first seed): documented 24/38, derivative 24/38, ratio 24/38, cost_penalty 24/38, vertex 24/38
+final answer matches ground truth (clear datasets, first seed): documented 19/24, derivative 19/24, ratio 19/24, cost_penalty 19/24, vertex 19/24
+method 1 value alone matches ground truth (all runs): documented 99/190, derivative 45/190, ratio 0/190, cost_penalty 36/190, vertex 1/190
+method 1 is part of the winning majority: documented 121/190, derivative 51/190, ratio 14/190, cost_penalty 53/190, vertex 6/190
+method 1 value differs documented vs derivative: 124/190 runs
+final answer differs documented vs derivative: 8/190 runs
+derivative variant picks k=2: 179/190 runs (equals plain "largest single drop": 117/190)
+runs: 190 (120 clear, separation >= 2.0)

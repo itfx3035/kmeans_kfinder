@@ -1,0 +1,11 @@
+
+=== baseline.kmeans_kfinder_baseline ===
+dataset            truth best_k  agree vote_ok  fit_best  stable kw_intact  warn      ms  notes
+clean_blobs            4      4   True    True     False    True      True     0   374.1  AttributeError {'best_k_opt1': 3, 'best_k_opt3': 4, 'best_k_opt4': 4, 'best_k_opt5': 4, 'best_k_opt2': 4}
+overlapping_blobs      3      3   True    True     False    True      True     0   355.3  AttributeError {'best_k_opt1': 3, 'best_k_opt3': 21, 'best_k_opt4': 3, 'best_k_opt5': 3, 'best_k_opt2': 3}
+anisotropic_blobs      3      3   True    True     False   False      True     0   366.3  AttributeError {'best_k_opt1': 18, 'best_k_opt3': 3, 'best_k_opt2': 7, 'best_k_opt4': 3, 'best_k_opt5': 3}
+tiny_dataset           2   None  False   False     False    True      True     0    None  ValueError: n_samples=12 should be >= n_clusters=13. {}
+single_cluster_noise     1      7  False    True     False   False      True     0   340.2  AttributeError {'best_k_opt1': 21, 'best_k_opt3': 7, 'best_k_opt2': 21, 'best_k_opt4': 7, 'best_k_opt5': 7}
+degenerate_identical     1   None  False   False     False    True     False     0    None  ZeroDivisionError: division by zero {}
+iris                   3      4  False    True     False   False      True     0   319.7  AttributeError {'best_k_opt1': 2, 'best_k_opt3': 4, 'best_k_opt2': 10, 'best_k_opt4': 2, 'best_k_opt5': 4}
+score: crash_free=5/7 agree_with_truth=3/7 vote_consistent=5/7 fit_best_ok=0/7 stable=4/7 kwargs_intact=6/7 total_time_ms=1755.6

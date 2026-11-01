@@ -1,0 +1,28 @@
+dataset                  truth     10     20     30     40
+sep2.0_k2                    2      2      2      2      2
+sep2.0_k3                    3      3      3      3      3
+sep2.0_k4                    4      4      4      4      4
+sep2.0_k6                    6      4      4      5      5
+sep2.5_k2                    2      2      2      2      2
+sep2.5_k3                    3      3      3      3      3
+sep2.5_k4                    4      3      3      3      3
+sep2.5_k6                    6      5      5      5      5
+sep3.0_k2                    2      2      2      2      2
+sep3.0_k3                    3      3      3      3      3
+sep3.0_k4                    4      3      3      4      4
+sep3.0_k6                    6      5      5      5      5
+sep4.0_k2                    2      2      2      2      2
+sep4.0_k3                    3      3      3      3      3
+sep4.0_k4                    4      4      4      4      4
+sep4.0_k6                    6      4      4      4      4
+sep6.0_k2                    2      2      2      2      2
+sep6.0_k3                    3      3      3      3      3
+sep6.0_k4                    4      4      4      4      4
+sep6.0_k6                    6      6      6      6      6
+sep10.0_k2                   2      2      2      2      2
+sep10.0_k3                   3      3      3      3      3
+sep10.0_k4                   4      4      4      4      4
+sep10.0_k6                   6      6      6      6      6
+
+clear datasets: 24, answer changes across max_k in (10, 20, 30, 40): 2
+seed: 1, datasets with fewer than 30 samples are excluded

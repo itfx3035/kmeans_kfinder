@@ -1,0 +1,11 @@
+method     own convention   opposite
+method1                85/120          0/120
+method2               102/120         11/120
+method3                70/120          8/120
+method4                79/120         14/120
+method5                98/120         16/120
+
+vote with the current mixed convention: 97/120
+vote with every method reported as raw k: 14/120
+runs where the convention changes the answer: 120/120
+runs: 120 (clear datasets only, separation >= 2.0)

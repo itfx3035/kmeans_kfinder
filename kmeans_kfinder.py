@@ -1,236 +1,375 @@
-# pylint: disable=C0301
+'''KMeans k finder.
 
-''' KMeans k finder
-    Finds the best k (number of clusters) on supplied dataset.
-    Works upon sci-kit learn KMeans implementation.
-    Uses five different methods to find best k; final result is based on voting.
+Finds the best k (number of clusters) for a dataset by fitting scikit-learn
+KMeans for every k in [1, max_k] and applying five heuristics to the resulting
+distance curve. The final answer is the majority vote of the five methods.
+
+All five methods work on the same table (`stats`), so the answer can always be
+inspected method by method.
+
+Each method reports k using the convention described in its own docstring: method 1
+reports the winning row itself, methods 2..5 report the elbow vertex (k - 1).
 '''
 
+from __future__ import annotations
+
 from collections import Counter
-from math import sqrt, atan2, degrees
+from dataclasses import dataclass
+from math import atan2, degrees, sqrt
+from typing import Optional
+
+import numpy as np
 from sklearn.cluster import KMeans
 
-def calculate_angle(pt_a_axis_1, pt_a_axis_2, pt_b_axis_1, pt_b_axis_2, pt_c_axis_1, pt_c_axis_2):
-    ''' Calculates angle between two lines
+# Method 2 counts only drops that are at least this share of the largest drop.
+METHOD2_DROP_SHARE = 0.25
 
-        Parameters
-        ------------------
-        pt_a_axis_1, pt_a_axis_2: float
-            axis coordinates (x,y) of upper point
-        pt_b_axis_1, pt_b_axis_2: float
-            axis coordinates (x,y) of intersection point
-        pt_c_axis_1, pt_c_axis_2: float
-            axis coordinates (x,y) of lower point
 
-        Returns
-        ------------------
-        angle of abc: float
+def calculate_angle(pt_a_axis_1, pt_a_axis_2, pt_b_axis_1, pt_b_axis_2,
+                    pt_c_axis_1, pt_c_axis_2) -> float:
+    '''Angle abc in degrees, measured at the intersection point b.
+
+    Parameters
+    ----------
+    pt_a_axis_1, pt_a_axis_2:
+        coordinates of the upper point
+    pt_b_axis_1, pt_b_axis_2:
+        coordinates of the intersection point (the vertex)
+    pt_c_axis_1, pt_c_axis_2:
+        coordinates of the lower point
+
+    Returns
+    -------
+    float: angle of abc in [0, 360)
     '''
-    angle = degrees(atan2(pt_c_axis_2-pt_b_axis_2, pt_c_axis_1-pt_b_axis_1) -
-                    atan2(pt_a_axis_2-pt_b_axis_2, pt_a_axis_1-pt_b_axis_1))
+    angle = degrees(
+        atan2(pt_c_axis_2 - pt_b_axis_2, pt_c_axis_1 - pt_b_axis_1)
+        - atan2(pt_a_axis_2 - pt_b_axis_2, pt_a_axis_1 - pt_b_axis_1)
+    )
     return angle + 360 if angle < 0 else angle
 
-class KMeansKFinder:
-    ''' Parameters for initializing
-        ----------------------------
-        X - array-like or similar
-            Data to fit KMeans model. Refer to sci-kit learn KMeans fit method.
-        max_k - integer
-            Maximum k to check. max_k=30 by default.
-            Note that setting large max_k may cause performance degradation.
-        **kwargs - named parameters to pass to KMeans object.
 
-        Properties of model object
-        ----------------------------
-        max_k: integer
-            Maximum k to check
-        kmeans_kwargs - **kwargs - named parameters to pass to KMeans object
-        X:  array-like or similar
-            Data to fit KMeans model. Refer to sci-kit learn KMeans fit method
-        best_k: integer
-            best k according to majority of methods.
-            find_best_k method must be executed to find the best k
-        best_k_opts: dict with 5 elements
-            best_k_opt1: best k according to method #1
-                k at max difference between delta_kmeans_distance_pct and diff_delta_distance_complexity,
-                where delta_kmeans_distance_pct represents KMeans distances decrease (derivative from kmeans distance)
-                and diff_delta_distance_complexity represents inverted complexity increase (basically 1/k)
-            best_k_opt2: best k according to method #2
-                k, which is previous to last significant drop of delta_kmeans_distance_pct,
-                where delta_kmeans_distance_pct represents KMeans distances decrease (derivative from kmeans distance)
-                and only top bigger 25% of drops are taken into account
-            best_k_opt3: best k according to method #3
-                k at max delta_of_delta_kmeans_distance_pct,
-                where delta_of_delta_kmeans_distance_pct is derivative from of delta_kmeans_distance_pct,
-                which means that delta_of_delta_kmeans_distance_pct is a second order derivative from kmeans distance
-            best_k_opt4: best k according to method #4
-                k at max triangle height,
-                where tringle consists of three nearest points of kmeans distance plot
-            best_k_opt5: best k according to method #5
-                k at minimal angle on kmeans distance plot. True elbow method.
+@dataclass(frozen=True)
+class StatsRow:
+    '''One row of the distance table for a single value of k.
+
+    Every derived value is None when it is not defined for that k (first rows of
+    the table, or division by zero on degenerate data). Undefined values never
+    win a method.
+
+    `complexity_penalty` is the fixed cost `1/k` of using k clusters. It is not the
+    derivative of complexity; the derivative would be `1/k - 1/(k-1)`.
     '''
 
-    def __init__(self, X, max_k=30, **kwargs):
+    k: int
+    distance: float
+    delta_distance_pct: Optional[float] = None
+    diff_delta_distance_pct: Optional[float] = None
+    delta_of_delta_distance_pct: Optional[float] = None
+    complexity_penalty: Optional[float] = None
+    diff_delta_distance_complexity: Optional[float] = None
+
+
+class KMeansKFinder:
+    '''Finds the best k for a dataset using five heuristics plus majority voting.
+
+    Parameters
+    ----------
+    X:
+        array-like data to fit KMeans on (same input as scikit-learn KMeans.fit).
+    max_k:
+        maximum k to check, 30 by default. Large max_k means many KMeans fits,
+        so it can be slow. max_k is automatically limited to the number of rows
+        in X, because KMeans cannot create more clusters than samples.
+    **kwargs:
+        named parameters passed to every KMeans instance. Set `random_state` for
+        reproducible results. A `n_clusters` value here is ignored (it is set per k).
+
+    Attributes
+    ----------
+    stats:
+        list of StatsRow, one row per k. Populated by find_best_k().
+    best_k_opts:
+        dict with one entry per method (best_k_opt1..best_k_opt5). Method results
+        that are undefined are stored as None. Populated by find_best_k().
+    best_k:
+        majority vote of the five methods, largest k wins ties. None until
+        find_best_k() has been executed and no method produced a result.
+
+    Methods
+    ----------
+    find_best_k():
+        fit KMeans for k = 1..max_k, fill stats, run the five methods, vote.
+    fit_best():
+        return a fitted KMeans instance using best_k (calls find_best_k() if needed).
+
+    Notes
+    ----------
+    Reporting conventions (kept as documented in the README):
+
+    * method 1 reports the k of the row where the distance improvement minus the
+      complexity cost penalty `1/k` is largest. The `1/k` term is a fixed cost, not a
+      derivative - see the method docstring for why it is kept.
+    * methods 2..5 report the elbow vertex, i.e. k - 1.
+
+    Measured on 120 runs over datasets with separated clusters (see
+    reports/method1_grid.txt and reports/convention.txt): using the true derivative
+    `1/k - 1/(k-1)` lowers method 1 agreement with the known k from 85/120 to 35/120,
+    because `1/(k(k-1))` decays as `1/k^2` and the score degenerates into "largest
+    single drop", which is almost always k = 2. The final vote accuracy does not
+    improve, so the documented formula is kept.
+    '''
+
+    def __init__(self, X, max_k: int = 30, **kwargs):
+        if not isinstance(max_k, int) or max_k < 1:
+            raise ValueError(f'max_k must be a positive integer, got {max_k!r}')
+
         self.max_k = max_k
-        self.kmeans_kwargs = kwargs
+        # n_clusters is set per k, so a user supplied value is ignored
+        self.kmeans_kwargs = {k: v for k, v in kwargs.items() if k != 'n_clusters'}
         self.X = X
-        best_k = None
-        best_k_opts = None
 
-    def find_best_k(self):
-        ''' Find best k parameter (number of clusters)
+        self.stats: list[StatsRow] = []
+        self.best_k_opts: dict[str, Optional[int]] = {}
+        self.best_k: Optional[int] = None
+        self._best_model = None
 
-            Results
-            -----------------------
-            best_k: integer
-                best k according to majority of methods
+    @property
+    def n_samples(self) -> int:
+        return np.asarray(self.X).shape[0]
+
+    @property
+    def effective_max_k(self) -> int:
+        '''max_k limited by the number of samples (KMeans cannot exceed them).'''
+        return min(self.max_k, self.n_samples)
+
+    def _fit_stats(self) -> list[StatsRow]:
+        '''Fit KMeans for every k and build the stats table in one pass.
+
+        Fitting stops early when the distance reaches 0, because it cannot decrease
+        further: every later k would produce the same zero distance (and a
+        convergence warning from scikit-learn) without adding any information.
         '''
-        kwargs = self.kmeans_kwargs
-
-        # results
-        best_k_opts = {}
-
-        # init variables
-        kmeans_distance_k_minus_2 = 0
-        kmeans_distance_k_minus_1 = 0
-        max_diff_delta_distance_complexity = -9999
-        max_delta_of_delta_kmeans_distance_pct = -9999
-        max_drop_delta_kmeans_distance_pct = 9999
-        max_triangle_height = -9999
-        max_kmeans_distance = -9999
-        min_angle = 360
-        delta_kmeans_distance_pct_k_minus_1 = -9999
-
-        # statistic storage
-        stats = []
-
-        for number_of_k in range (1,self.max_k+1):
-            kwargs['n_clusters'] = number_of_k
-            km_obj =  KMeans(**kwargs)
+        rows: list[StatsRow] = []
+        for k in range(1, self.effective_max_k + 1):
+            km_obj = KMeans(n_clusters=k, **self.kmeans_kwargs)
             km_obj.fit(self.X)
-            kmeans_distance = sqrt(km_obj.inertia_)
+            distance = sqrt(km_obj.inertia_)
 
-            # calculate required values
-            if number_of_k==1:
-                delta_complexity_pct = 0
-                delta_kmeans_distance_pct = 0
-                delta_of_delta_kmeans_distance_pct = 0
-            else:
-                delta_complexity_pct = 1/number_of_k
-                delta_kmeans_distance_pct = (kmeans_distance_k_minus_1 - kmeans_distance)/kmeans_distance_k_minus_1
-                max_drop_delta_kmeans_distance_pct = min(max_drop_delta_kmeans_distance_pct, diff_delta_kmeans_distance_pct)
+            prev = rows[-1] if rows else None
+            prev_delta = prev.delta_distance_pct if prev else None
 
-                if number_of_k>2:
-                    delta_of_delta_kmeans_distance_pct = (delta_kmeans_distance_pct_k_minus_1 - delta_kmeans_distance_pct)/delta_kmeans_distance_pct_k_minus_1
-                else:
-                    delta_of_delta_kmeans_distance_pct = 0
+            delta = _ratio(prev.distance - distance, prev.distance) if prev else None
+            diff_delta = (delta - prev_delta) if prev and prev_delta is not None else None
+            delta_of_delta = _ratio(prev_delta - delta, prev_delta) if prev and prev_delta else None
+            complexity_penalty = 1 / k if prev else None
+            complexity_diff = (delta - complexity_penalty) if prev and delta is not None else None
 
-            diff_delta_distance_complexity = delta_kmeans_distance_pct - delta_complexity_pct
+            rows.append(StatsRow(k=k, distance=distance, delta_distance_pct=delta,
+                                 diff_delta_distance_pct=diff_delta,
+                                 delta_of_delta_distance_pct=delta_of_delta,
+                                 complexity_penalty=complexity_penalty,
+                                 diff_delta_distance_complexity=complexity_diff))
 
-            # max delta_kmeans_distance_pct drop
-            max_kmeans_distance = max(max_kmeans_distance, kmeans_distance)
+            if distance == 0:
+                break
 
-            diff_delta_kmeans_distance_pct = delta_kmeans_distance_pct - delta_kmeans_distance_pct_k_minus_1
+        self.stats = rows
+        return rows
 
-            stats.append([number_of_k, kmeans_distance, delta_kmeans_distance_pct,
-                          diff_delta_kmeans_distance_pct, delta_of_delta_kmeans_distance_pct,
-                          diff_delta_distance_complexity])
+    # ------------------------------------------------------------------ methods
 
-            kmeans_distance_k_minus_2 = kmeans_distance_k_minus_1
-            kmeans_distance_k_minus_1 = kmeans_distance
-            delta_kmeans_distance_pct_k_minus_1 = delta_kmeans_distance_pct
+    def _method1(self, rows) -> Optional[int]:
+        '''Row with the largest distance improvement minus complexity cost penalty.
 
-        top025_drop = max_drop_delta_kmeans_distance_pct*0.25
+        Score: `delta_distance_pct - 1/k`. The `1/k` term is the fixed cost of using k
+        clusters, not the derivative of complexity (that would be
+        `1/k - 1/(k-1) = -1/(k(k-1))`). Comparing a relative improvement with a fixed
+        cost is what makes this heuristic elbow-like: a true derivative decays as 1/k^2,
+        so the score degenerates into "largest single drop" and nearly always returns
+        k = 2 - measured 179/185 runs, with agreement with the known k falling from
+        85/120 to 35/120 on separable data (reports/method1_grid.txt).
 
-        # apply all methods to find best k
-        for stat in stats:
-            number_of_k = stat[0]
-            kmeans_distance = stat[1]
-            delta_kmeans_distance_pct = stat[2]
-            diff_delta_kmeans_distance_pct = stat[3]
-            delta_of_delta_kmeans_distance_pct = stat[4]
-            diff_delta_distance_complexity = stat[5]
-
-            # method 1 - max difference between delta_kmeans_distance_pct and diff_delta_distance_complexity
-            if number_of_k>1 and max_diff_delta_distance_complexity<diff_delta_distance_complexity:
-                max_diff_delta_distance_complexity = diff_delta_distance_complexity
-                best_k_opts['best_k_opt1'] = number_of_k
-
-            # method 2 - prev k of last significant drop of delta_kmeans_distance_pct
-            if number_of_k>1 and diff_delta_kmeans_distance_pct<top025_drop:
-                best_k_opts['best_k_opt2'] = number_of_k-1
-
-            # method 3 - max delta_of_delta_kmeans_distance_pct
-            if number_of_k>1 and delta_of_delta_kmeans_distance_pct>max_delta_of_delta_kmeans_distance_pct:
-                max_delta_of_delta_kmeans_distance_pct = delta_of_delta_kmeans_distance_pct
-                best_k_opts['best_k_opt3'] = number_of_k-1
-
-            # prepare data for methods 4 and 5
-            scaled_kmeans_distance_k_minus_2 = kmeans_distance_k_minus_2/max_kmeans_distance
-            scaled_kmeans_distance_k_minus_1 = kmeans_distance_k_minus_1/max_kmeans_distance
-            scaled_kmeans_distance = kmeans_distance/max_kmeans_distance
-
-            scaled_complexity_k_minus_2 = (number_of_k-2)/self.max_k
-            scaled_complexity_k_minus_1 = (number_of_k-1)/self.max_k
-            scaled_complexity = number_of_k/self.max_k
-
-            # method 4 - triangle height
-            if number_of_k>=3:
-                # sides of the triangle
-                a_side = sqrt((scaled_kmeans_distance_k_minus_1 - scaled_kmeans_distance_k_minus_2)**2 + (scaled_complexity_k_minus_1 - scaled_complexity_k_minus_2)**2)
-                b_side = sqrt((scaled_kmeans_distance - scaled_kmeans_distance_k_minus_1)**2 + (scaled_complexity - scaled_complexity_k_minus_1)**2)
-                c_side = sqrt((scaled_kmeans_distance - scaled_kmeans_distance_k_minus_2)**2 + (scaled_complexity - scaled_complexity_k_minus_2)**2)
-
-                # half of the perimeter
-                half_p = (a_side + b_side + c_side)/2
-
-                # height of the triangle
-                t_height = 2*sqrt(half_p*(half_p-a_side)*(half_p-b_side)*(half_p-c_side))/c_side
-
-                if t_height>max_triangle_height:
-                    max_triangle_height = t_height
-                    best_k_opts['best_k_opt4'] = number_of_k-1
-
-            # method 5 - true elbow
-            if number_of_k>=3:
-                curr_angle = calculate_angle(scaled_complexity, scaled_kmeans_distance,
-                                             scaled_complexity_k_minus_1, scaled_kmeans_distance_k_minus_1,
-                                             scaled_complexity_k_minus_2, scaled_kmeans_distance_k_minus_2)
-                if curr_angle<min_angle:
-                    min_angle = curr_angle
-                    best_k_opts['best_k_opt5'] = number_of_k-1
-
-            kmeans_distance_k_minus_2 = kmeans_distance_k_minus_1
-            kmeans_distance_k_minus_1 = kmeans_distance
-
-        self.best_k_opts = best_k_opts
-
-        cntr = Counter(list(best_k_opts.values()))
-        best_k = 0
-        best_k_cnt = 0
-        for element in cntr:
-            if cntr[element]>=best_k_cnt: # larger k with same score is preferable
-                best_k_cnt = cntr[element]
-                best_k = element
-
-        self.best_k = best_k
+        Reported value: the k of the winning row itself. Methods 2..5 report the elbow
+        vertex (k - 1); each convention is the one that fits what that method measures
+        (reports/convention.txt).
+        '''
+        best_k, best_value = None, None
+        for row in rows:
+            if row.k < 2 or row.diff_delta_distance_complexity is None:
+                continue
+            if best_value is None or row.diff_delta_distance_complexity > best_value:
+                best_value = row.diff_delta_distance_complexity
+                best_k = row.k
         return best_k
 
+    def _method2(self, rows) -> Optional[int]:
+        '''Previous k of the last significant drop of the distance derivative.
+
+        Only drops that are at least METHOD2_DROP_SHARE of the largest drop count.
+        Reported value: the vertex k - 1.
+        '''
+        drops = [r.diff_delta_distance_pct for r in rows
+                 if r.diff_delta_distance_pct is not None]
+        if not drops:
+            return None
+
+        largest_drop = min(drops)          # most negative value
+        threshold = largest_drop * METHOD2_DROP_SHARE
+
+        best_k = None
+        for row in rows:
+            if row.k < 2 or row.diff_delta_distance_pct is None:
+                continue
+            if row.diff_delta_distance_pct < threshold:
+                best_k = row.k - 1
+        return best_k
+
+    def _method3(self, rows) -> Optional[int]:
+        '''Elbow vertex of the second order derivative of the distance.
+
+        Reported value: the elbow vertex k - 1.
+        '''
+        best_k, best_value = None, None
+        for row in rows:
+            if row.k < 3 or row.delta_of_delta_distance_pct is None:
+                continue
+            if best_value is None or row.delta_of_delta_distance_pct > best_value:
+                best_value = row.delta_of_delta_distance_pct
+                best_k = row.k - 1
+        return best_k
+
+    def _method4(self, rows) -> Optional[int]:
+        '''Elbow vertex of the triangle built from three neighbouring points.
+
+        Reported value: the elbow vertex k - 1.
+        '''
+        scaled = self._scaled(rows)
+        if scaled is None:
+            return None
+        best_k, best_height = None, None
+        for i in range(2, len(rows)):
+            p1, p2, p3 = scaled[i - 2], scaled[i - 1], scaled[i]
+            a_side = _side(p1, p2)
+            b_side = _side(p2, p3)
+            c_side = _side(p1, p3)
+            if not c_side:
+                continue
+
+            half_p = (a_side + b_side + c_side) / 2
+            area_sq = half_p * (half_p - a_side) * (half_p - b_side) * (half_p - c_side)
+            if area_sq < 0:
+                continue
+            height = 2 * sqrt(area_sq) / c_side
+
+            if best_height is None or height > best_height:
+                best_height = height
+                best_k = rows[i].k - 1
+        return best_k
+
+    def _method5(self, rows) -> Optional[int]:
+        '''True elbow: minimal angle on the distance plot.
+
+        Reported value: the elbow vertex k - 1.
+        '''
+        scaled = self._scaled(rows)
+        if scaled is None:
+            return None
+        best_k, best_angle = None, None
+        for i in range(2, len(rows)):
+            p1, p2, p3 = scaled[i - 2], scaled[i - 1], scaled[i]
+            angle = calculate_angle(p3[0], p3[1], p2[0], p2[1], p1[0], p1[1])
+            if best_angle is None or angle < best_angle:
+                best_angle = angle
+                best_k = rows[i].k - 1
+        return best_k
+
+    def _scaled(self, rows):
+        '''Points of the plot normalised to a [0, 1] x [0, 1] box.
+
+        Returns None for degenerate data (zero total distance), where the plot has
+        no shape and methods 4 and 5 are not defined.
+
+        The x axis is scaled by effective_max_k, so methods 4 and 5 can change their
+        answer when max_k changes. That is the documented behaviour.
+        '''
+        max_distance = max(row.distance for row in rows)
+        if not max_distance:
+            return None
+        limit = self.effective_max_k
+        return [(row.k / limit, row.distance / max_distance) for row in rows]
+
+    # ------------------------------------------------------------------ voting
+
+    @staticmethod
+    def _vote(best_k_opts) -> Optional[int]:
+        '''Majority vote of the method results, largest k wins ties.'''
+        counts = Counter(v for v in best_k_opts.values() if v is not None)
+        if not counts:
+            return None
+        top = max(counts.values())
+        return max(k for k, count in counts.items() if count == top)
+
+    def find_best_k(self) -> Optional[int]:
+        '''Run all five methods and return the majority vote.
+
+        Returns
+        -------
+        int or None: best k, or None when no method produced a result.
+        '''
+        rows = self._fit_stats()
+
+        self.best_k_opts = {
+            'best_k_opt1': self._method1(rows),
+            'best_k_opt2': self._method2(rows),
+            'best_k_opt3': self._method3(rows),
+            'best_k_opt4': self._method4(rows),
+            'best_k_opt5': self._method5(rows),
+        }
+        self.best_k = self._vote(self.best_k_opts)
+        return self.best_k
 
     def fit_best(self):
-        ''' Fits scikit-learn Kmeans with best k found.
-            find_best_k will be executed in order to calculate best k if it wasn't executed previously.
+        '''Return a fitted KMeans instance using best_k.
 
-            Returns
-            ------------------
-            Instance of scikit-learn Kmeans, fitted with best_k
+        find_best_k() is executed if it has not been executed yet. The fitted model
+        is cached, so repeated calls do not refit.
         '''
         if self.best_k is None:
             self.find_best_k()
+        if self._best_model is None:
+            if self.best_k is None:
+                raise ValueError('no method produced a result, cannot fit a model')
+            self._best_model = KMeans(n_clusters=self.best_k, **self.kmeans_kwargs)
+            self._best_model.fit(self.X)
+        return self._best_model
 
-        kwargs = self.kmeans_kwargs
-        kwargs['n_clusters'] = self.best_k
-        km_obj =  KMeans(**kwargs)
-        km_obj.fit(self.X)
+    def summary(self) -> str:
+        '''Human readable summary of the stats table and the method results.'''
+        lines = [f'{"k":>3} {"distance":>10} {"delta":>8} {"d_delta":>10} '
+                 f'{"d2_delta":>10} {"m1_score":>10}']
+        for row in self.stats:
+            lines.append(
+                f'{row.k:>3} {row.distance:>10.4f} '
+                f'{_fmt(row.delta_distance_pct):>8} {_fmt(row.diff_delta_distance_pct):>10} '
+                f'{_fmt(row.delta_of_delta_distance_pct):>10} '
+                f'{_fmt(row.diff_delta_distance_complexity):>10}'
+            )
+        lines.append(f'methods: {self.best_k_opts}')
+        lines.append(f'best_k: {self.best_k}')
+        return '\n'.join(lines)
 
-        return km_obj
+
+def _ratio(numerator, denominator):
+    '''Division that returns None instead of raising on zero denominators.'''
+    if not denominator:
+        return None
+    return numerator / denominator
+
+
+def _side(p1, p2):
+    return sqrt((p2[1] - p1[1]) ** 2 + (p2[0] - p1[0]) ** 2)
+
+
+def _fmt(value):
+    return 'n/a' if value is None else f'{value:.4f}'

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kmeans-kfinder"
+version = "1.0.0"
+description = "Find the best k for KMeans by voting between five elbow heuristics"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{name = "itfx3035"}]
+dependencies = [
+    "scikit-learn>=1.4",
+    "numpy>=1.22",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.4"]
+
+[tool.setuptools]
+py-modules = ["kmeans_kfinder"]
+
+# PEP 561 marker. This project ships a single flat module, so the marker is installed
+# next to it. If the project is ever restructured into a package, move py.typed inside it.
+[tool.setuptools.data-files]
+"" = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+# baseline/ is a frozen copy of the pre-change code used as the measurement reference,
+# so its original style is not linted.
+extend-exclude = ["baseline"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
